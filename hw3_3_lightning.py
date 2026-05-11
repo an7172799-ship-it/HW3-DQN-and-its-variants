@@ -129,7 +129,7 @@ class DQNLightning(pl.LightningModule):
                 if random.random() < self.epsilon:
                     action_ = np.random.randint(0, 4)
                 else:
-                    action_ = int(torch.argmax(self.online(state1)).item())
+                    action_ = int(torch.argmax(self.online(state1.to(self.device))).item())
             game.makeMove(ACTION_SET[action_])
             state2        = self._get_state(game)
             reward, done  = self._reward_done(game)
@@ -199,18 +199,22 @@ if __name__ == '__main__':
         save_top_k=1, verbose=True,
     )
 
+    accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'
     trainer = pl.Trainer(
         max_epochs=EPOCHS,
-        gradient_clip_val=1.0,       # gradient clipping
+        gradient_clip_val=1.0,
+        accelerator=accelerator,
+        devices=1,
         callbacks=[checkpoint_cb],
         enable_progress_bar=True,
         log_every_n_steps=50,
     )
+    print(f"Using device: {accelerator.upper()}")
 
     trainer.fit(model)
 
     # ── Final evaluation ───────────────────────────────────────────────────
-    online = model.online
+    online = model.online.cpu()
     online.eval()
     ACTION_SET = {0: 'u', 1: 'd', 2: 'l', 3: 'r'}
     wins = 0

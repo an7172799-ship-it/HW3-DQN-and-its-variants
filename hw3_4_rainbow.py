@@ -61,24 +61,24 @@ class RainbowNet(nn.Module):
 # ── 2. Prioritized Experience Replay (PER) ────────────────────────────────────
 class SumTree:
     """
-    Binary sum-tree for O(log n) priority sampling.
-    Leaves hold per-transition priorities; internal nodes hold sums.
+    1-indexed binary sum-tree for O(log n) priority sampling.
+    Root at index 1; leaves at [capacity, 2*capacity-1].
     """
     def __init__(self, capacity):
-        self.capacity = capacity
-        self.tree     = np.zeros(2 * capacity)   # tree nodes
-        self.data     = [None] * capacity        # actual transitions
-        self.write    = 0
+        self.capacity  = capacity
+        self.tree      = np.zeros(2 * capacity)  # index 1..2*capacity-1
+        self.data      = [None] * capacity
+        self.write     = 0
         self.n_entries = 0
 
     def _propagate(self, idx, change):
-        parent = (idx - 1) // 2
+        parent = idx >> 1          # integer divide by 2
         self.tree[parent] += change
-        if parent != 0:
+        if parent > 1:
             self._propagate(parent, change)
 
     def _retrieve(self, idx, s):
-        left  = 2 * idx + 1
+        left  = idx << 1           # 2 * idx
         right = left + 1
         if left >= len(self.tree):
             return idx
@@ -88,13 +88,13 @@ class SumTree:
 
     @property
     def total(self):
-        return self.tree[0]
+        return self.tree[1]        # root is at index 1
 
     def add(self, priority, data):
-        idx = self.write + self.capacity - 1
+        idx = self.write + self.capacity   # leaf index (1-indexed)
         self.data[self.write] = data
         self.update(idx, priority)
-        self.write = (self.write + 1) % self.capacity
+        self.write     = (self.write + 1) % self.capacity
         self.n_entries = min(self.n_entries + 1, self.capacity)
 
     def update(self, idx, priority):
@@ -103,8 +103,8 @@ class SumTree:
         self._propagate(idx, change)
 
     def get(self, s):
-        idx  = self._retrieve(0, s)
-        data_idx = idx - self.capacity + 1
+        idx      = self._retrieve(1, s)    # start from root=1
+        data_idx = idx - self.capacity
         return idx, self.tree[idx], self.data[data_idx]
 
 
@@ -126,16 +126,20 @@ class PrioritizedReplay:
             lo, hi = segment * i, segment * (i + 1)
             s      = random.uniform(lo, hi)
             idx, priority, data = self.tree.get(s)
-            if data is None:
-                continue
-            prob = priority / self.tree.total
+            if data is None:           # slot not yet filled — resample uniformly
+                rand_i = random.randint(0, self.tree.n_entries - 1)
+                leaf   = rand_i + self.tree.capacity
+                priority = self.tree.tree[leaf]
+                data   = self.tree.data[rand_i]
+                idx    = leaf
+            prob = max(priority, 1e-8) / self.tree.total
             w    = (self.tree.n_entries * prob) ** (-beta)
             batch.append(data)
             indices.append(idx)
             weights.append(w)
 
         weights = np.array(weights, dtype=np.float32)
-        weights /= weights.max()          # normalize
+        weights /= weights.max()
         return batch, indices, weights
 
     def update_priorities(self, indices, errors):
@@ -179,11 +183,15 @@ class NStepBuffer:
         self.buf.clear()
 
 
+# ── Device ────────────────────────────────────────────────────────────────────
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Using device: {device}")
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def get_state(game):
     s = game.board.render_np().reshape(1, 64).astype(np.float32)
     s += np.random.rand(1, 64).astype(np.float32) / 100.0
-    return torch.from_numpy(s)
+    return torch.from_numpy(s)          # 存 CPU tensor，batch 組好再一起送 GPU
 
 def get_reward_done(game):
     r = game.reward()
@@ -193,8 +201,8 @@ def get_reward_done(game):
 
 
 # ── Training ──────────────────────────────────────────────────────────────────
-online   = RainbowNet()
-target   = copy.deepcopy(online)
+online   = RainbowNet().to(device)
+target   = copy.deepcopy(online).to(device)
 target.load_state_dict(online.state_dict())
 
 optimizer = torch.optim.Adam(online.parameters(), lr=LR)
@@ -212,7 +220,7 @@ for epoch in range(EPOCHS):
     for mov in range(MAX_MOVES):
         step_cnt += 1
 
-        qval = online(state1)
+        qval = online(state1.to(device))
         if random.random() < epsilon:
             action_ = np.random.randint(0, 4)
         else:
@@ -232,17 +240,16 @@ for epoch in range(EPOCHS):
         # ── PER mini-batch update ──────────────────────────────────────────
         if len(per) >= BATCH_SIZE:
             batch, indices, weights = per.sample(BATCH_SIZE, beta)
-            w_tensor = torch.tensor(weights, dtype=torch.float32)
+            w_tensor = torch.tensor(weights, dtype=torch.float32).to(device)
 
-            s1b = torch.cat([e[0] for e in batch])
-            ab  = torch.tensor([e[1] for e in batch], dtype=torch.long)
-            rb  = torch.tensor([e[2] for e in batch], dtype=torch.float32)
-            s2b = torch.cat([e[3] for e in batch])
-            db  = torch.tensor([e[4] for e in batch], dtype=torch.float32)
+            s1b = torch.cat([e[0] for e in batch]).to(device)
+            ab  = torch.tensor([e[1] for e in batch], dtype=torch.long).to(device)
+            rb  = torch.tensor([e[2] for e in batch], dtype=torch.float32).to(device)
+            s2b = torch.cat([e[3] for e in batch]).to(device)
+            db  = torch.tensor([e[4] for e in batch], dtype=torch.float32).to(device)
 
             Q1 = online(s1b)
             with torch.no_grad():
-                # Double DQN selection + target evaluation
                 a_star = online(s2b).argmax(dim=1, keepdim=True)
                 Q2_val = target(s2b).gather(1, a_star).squeeze()
 
@@ -281,7 +288,7 @@ for epoch in range(EPOCHS):
 
 
 # ── Final evaluation ──────────────────────────────────────────────────────────
-online.eval()
+online_cpu = online.cpu().eval()
 wins = 0
 N_EVAL = 500
 for _ in range(N_EVAL):
@@ -289,7 +296,7 @@ for _ in range(N_EVAL):
     state = get_state(game)
     for _ in range(MAX_MOVES):
         with torch.no_grad():
-            action_ = int(torch.argmax(online(state)).item())
+            action_ = int(torch.argmax(online_cpu(state)).item())
         game.makeMove(ACTION_SET[action_])
         state        = get_state(game)
         reward, done = get_reward_done(game)
