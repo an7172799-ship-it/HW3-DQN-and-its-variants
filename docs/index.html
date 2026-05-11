@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HW3: DQN and its Variants</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d2e; --surface2: #252840;
+    --accent: #7c6af7; --accent2: #56cfaf; --accent3: #f7956a;
+    --text: #e2e8f0; --muted: #8892a4; --border: #2d3152;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.7; }
+
+  /* Nav */
+  nav { position: sticky; top: 0; background: rgba(15,17,23,0.95); backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--border); z-index: 100; padding: 0 2rem; }
+  nav ul { display: flex; gap: 0; list-style: none; max-width: 1100px; margin: 0 auto; }
+  nav a { display: block; padding: 1rem 1.2rem; color: var(--muted); text-decoration: none;
+          font-size: .9rem; transition: color .2s; border-bottom: 2px solid transparent; }
+  nav a:hover, nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* Layout */
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 2rem 4rem; }
+  section { padding: 3rem 0 2rem; border-top: 1px solid var(--border); }
+  section:first-child { border-top: none; }
+
+  h1 { font-size: 2.4rem; font-weight: 700; background: linear-gradient(135deg, var(--accent), var(--accent2));
+       -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: .5rem; }
+  h2 { font-size: 1.6rem; color: var(--accent2); margin-bottom: 1.2rem; }
+  h3 { font-size: 1.15rem; color: var(--accent); margin: 1.5rem 0 .7rem; }
+  p  { color: var(--muted); margin-bottom: 1rem; }
+
+  /* Hero */
+  .hero { padding: 4rem 0 2rem; text-align: center; }
+  .hero p { font-size: 1.1rem; max-width: 600px; margin: .8rem auto; }
+  .badge { display: inline-block; background: var(--surface2); border: 1px solid var(--border);
+           padding: .3rem .9rem; border-radius: 20px; font-size: .8rem; color: var(--muted); margin: .3rem; }
+
+  /* Cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.2rem; margin: 1.5rem 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;
+          transition: border-color .2s, transform .2s; }
+  .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .card .icon { font-size: 2rem; margin-bottom: .6rem; }
+  .card h3 { margin: 0 0 .5rem; font-size: 1rem; }
+  .card p { font-size: .88rem; margin: 0; }
+
+  /* GridWorld Demo */
+  .gw-demo { display: flex; gap: 2rem; flex-wrap: wrap; align-items: flex-start; margin: 1.5rem 0; }
+  .gw-board { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; flex-shrink: 0; }
+  .gw-grid { display: grid; grid-template-columns: repeat(4, 64px); gap: 4px; }
+  .gw-cell { width: 64px; height: 64px; border-radius: 8px; display: flex; align-items: center;
+             justify-content: center; font-size: 1.6rem; font-weight: 700; transition: all .3s; }
+  .gw-cell.empty   { background: var(--surface2); }
+  .gw-cell.player  { background: linear-gradient(135deg, #7c6af7, #56cfaf); color: #fff; box-shadow: 0 0 16px #7c6af755; }
+  .gw-cell.goal    { background: linear-gradient(135deg, #56cfaf, #22a37a); color: #fff; }
+  .gw-cell.pit     { background: linear-gradient(135deg, #f7556a, #c0392b); color: #fff; }
+  .gw-cell.wall    { background: #2d3152; color: var(--muted); border: 2px solid var(--border); }
+  .gw-cell.trail   { background: rgba(124,106,247,0.15); }
+
+  .gw-controls { display: flex; gap: .6rem; flex-wrap: wrap; margin-top: 1rem; }
+  .btn { padding: .5rem 1.2rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2);
+         color: var(--text); cursor: pointer; font-size: .88rem; transition: all .2s; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: #6a58e0; }
+  .mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .gw-info { flex: 1; min-width: 220px; }
+  .stat-row { display: flex; justify-content: space-between; padding: .5rem 0; border-bottom: 1px solid var(--border); font-size: .9rem; }
+  .stat-row span:last-child { color: var(--accent2); font-weight: 600; }
+  .log { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .8rem 1rem;
+         font-family: monospace; font-size: .82rem; color: var(--accent2); margin-top: 1rem;
+         height: 120px; overflow-y: auto; }
+
+  /* Architecture diagram */
+  .arch { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+          padding: 1.5rem 2rem; margin: 1.5rem 0; overflow-x: auto; }
+  .arch-row { display: flex; align-items: center; gap: .5rem; margin: .4rem 0; flex-wrap: nowrap; }
+  .arch-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+              padding: .4rem .9rem; font-size: .82rem; white-space: nowrap; }
+  .arch-box.input  { border-color: var(--accent); color: var(--accent); }
+  .arch-box.hidden { border-color: #4a4a7a; }
+  .arch-box.output { border-color: var(--accent2); color: var(--accent2); }
+  .arch-box.value  { border-color: var(--accent3); color: var(--accent3); }
+  .arch-arrow { color: var(--muted); font-size: 1rem; }
+  .arch-split { display: flex; flex-direction: column; gap: .4rem; }
+
+  /* Code blocks */
+  pre { background: #0d0f1a; border: 1px solid var(--border); border-radius: 10px; padding: 1.2rem 1.5rem;
+        overflow-x: auto; font-size: .85rem; line-height: 1.7; margin: 1rem 0; }
+  code { font-family: 'Fira Code', 'Cascadia Code', monospace; }
+  .kw  { color: #c792ea; }
+  .fn  { color: #82aaff; }
+  .cm  { color: #546e7a; font-style: italic; }
+  .st  { color: #c3e88d; }
+  .nm  { color: #f78c6c; }
+
+  /* Comparison table */
+  table { width: 100%; border-collapse: collapse; margin: 1.2rem 0; font-size: .9rem; }
+  th { background: var(--surface2); padding: .7rem 1rem; text-align: left; color: var(--accent2);
+       border-bottom: 2px solid var(--border); }
+  td { padding: .7rem 1rem; border-bottom: 1px solid var(--border); color: var(--muted); }
+  tr:hover td { background: var(--surface); }
+  .check { color: var(--accent2); } .cross { color: #f7556a; }
+
+  /* Formula box */
+  .formula { background: var(--surface); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+             padding: 1rem 1.5rem; margin: 1rem 0; }
+  .formula p { color: var(--text); margin: 0; }
+
+  /* Component badges */
+  .components { display: flex; flex-wrap: wrap; gap: .6rem; margin: 1rem 0; }
+  .comp { padding: .4rem 1rem; border-radius: 20px; font-size: .82rem; font-weight: 600; }
+  .comp.c1 { background: rgba(124,106,247,.2); color: var(--accent); border: 1px solid var(--accent); }
+  .comp.c2 { background: rgba(86,207,175,.2); color: var(--accent2); border: 1px solid var(--accent2); }
+  .comp.c3 { background: rgba(247,149,106,.2); color: var(--accent3); border: 1px solid var(--accent3); }
+  .comp.c4 { background: rgba(247,85,106,.2); color: #f7556a; border: 1px solid #f7556a; }
+
+  /* Chart */
+  .chart-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0; }
+  canvas { max-height: 320px; }
+
+  /* Steps */
+  .steps { counter-reset: step; }
+  .step { display: flex; gap: 1rem; margin: 1rem 0; }
+  .step::before { counter-increment: step; content: counter(step); background: var(--accent);
+                  color: #fff; width: 28px; height: 28px; border-radius: 50%; display: flex;
+                  align-items: center; justify-content: center; font-size: .8rem; font-weight: 700;
+                  flex-shrink: 0; margin-top: .2rem; }
+  .step p { margin: 0; }
+
+  /* Rainbow */
+  .rainbow-title { font-size: 1.6rem; font-weight: 700;
+    background: linear-gradient(135deg, #7c6af7, #56cfaf, #f7956a, #f7556a);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+  footer { text-align: center; padding: 2rem; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--border); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<nav>
+  <ul>
+    <li><a href="#home" class="active">Home</a></li>
+    <li><a href="#env">Environment</a></li>
+    <li><a href="#hw1">HW3-1 Naive DQN</a></li>
+    <li><a href="#hw2">HW3-2 Double/Dueling</a></li>
+    <li><a href="#hw3">HW3-3 Lightning</a></li>
+    <li><a href="#hw4">HW3-4 Rainbow</a></li>
+  </ul>
+</nav>
+
+<div class="container">
+
+<!-- ── Hero ────────────────────────────────────────────────────────────────── -->
+<section id="home">
+  <div class="hero">
+    <h1>HW3: DQN and its Variants</h1>
+    <p>Implementing Deep Q-Networks on GridWorld — from Naive DQN to Rainbow DQN</p>
+    <div>
+      <span class="badge">🎮 GridWorld 4×4</span>
+      <span class="badge">🧠 PyTorch</span>
+      <span class="badge">⚡ PyTorch Lightning</span>
+      <span class="badge">🌈 Rainbow DQN</span>
+    </div>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="icon">1️⃣</div>
+      <h3>HW3-1: Naive DQN</h3>
+      <p>Experience Replay + Target Network on <strong>static</strong> mode. Foundation of DQN.</p>
+    </div>
+    <div class="card">
+      <div class="icon">2️⃣</div>
+      <h3>HW3-2: Double / Dueling</h3>
+      <p>Fix overestimation (Double) and decompose Q into V+A (Dueling) on <strong>player</strong> mode.</p>
+    </div>
+    <div class="card">
+      <div class="icon">3️⃣</div>
+      <h3>HW3-3: Lightning</h3>
+      <p>Convert to PyTorch Lightning with gradient clipping and LR scheduling on <strong>random</strong> mode.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🌈</div>
+      <h3>HW3-4: Rainbow (Bonus)</h3>
+      <p>Double + Dueling + Prioritized Replay + N-step Returns on <strong>random</strong> mode.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── Environment ──────────────────────────────────────────────────────────── -->
+<section id="env">
+  <h2>🌍 GridWorld Environment</h2>
+  <p>A 4×4 grid environment from <em>Deep Reinforcement Learning in Action</em> (Ch. 3). The agent must navigate from its starting position to the Goal while avoiding the Pit and Wall.</p>
+
+  <div class="gw-demo">
+    <div class="gw-board">
+      <div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap;">
+        <button class="btn mode-btn active" onclick="setMode('static')">static</button>
+        <button class="btn mode-btn" onclick="setMode('player')">player</button>
+        <button class="btn mode-btn" onclick="setMode('random')">random</button>
+      </div>
+      <div class="gw-grid" id="grid"></div>
+      <div class="gw-controls">
+        <button class="btn" onclick="move(0)">⬆ Up</button>
+        <button class="btn" onclick="move(1)">⬇ Down</button>
+        <button class="btn" onclick="move(2)">⬅ Left</button>
+        <button class="btn" onclick="move(3)">➡ Right</button>
+        <button class="btn primary" onclick="resetGame()">↺ Reset</button>
+        <button class="btn" onclick="autoPlay()">▶ Auto</button>
+      </div>
+    </div>
+
+    <div class="gw-info">
+      <h3>Game State</h3>
+      <div class="stat-row"><span>Mode</span><span id="st-mode">static</span></div>
+      <div class="stat-row"><span>Steps</span><span id="st-steps">0</span></div>
+      <div class="stat-row"><span>Total Reward</span><span id="st-reward">0</span></div>
+      <div class="stat-row"><span>Status</span><span id="st-status">Playing</span></div>
+
+      <h3 style="margin-top:1.2rem">Legend</h3>
+      <div class="stat-row"><span>🟣 Player (P)</span><span>Agent</span></div>
+      <div class="stat-row"><span>🟢 Goal (+)</span><span>+10, Win</span></div>
+      <div class="stat-row"><span>🔴 Pit (−)</span><span>−10, Lose</span></div>
+      <div class="stat-row"><span>⬛ Wall (W)</span><span>Impassable</span></div>
+
+      <div class="log" id="log">Game started. Use arrow buttons or keyboard (↑↓←→) to move.<br></div>
+    </div>
+  </div>
+
+  <h3>Three Modes</h3>
+  <table>
+    <tr><th>Mode</th><th>Player Pos</th><th>Others</th><th>State Dim</th><th>Difficulty</th></tr>
+    <tr><td><code>static</code></td><td>Fixed (0,3)</td><td>Fixed</td><td>64</td><td>Easy ⭐</td></tr>
+    <tr><td><code>player</code></td><td>Random</td><td>Fixed</td><td>64</td><td>Medium ⭐⭐</td></tr>
+    <tr><td><code>random</code></td><td>Random</td><td>All Random</td><td>64</td><td>Hard ⭐⭐⭐</td></tr>
+  </table>
+
+  <h3>State Representation</h3>
+  <p>State = <code>game.board.render_np().reshape(64)</code> — a 64-dimensional binary vector: 4 channels (one per object) × 4×4 grid, each cell is 1 if the object is there, 0 otherwise.</p>
+  <pre><code><span class="cm"># 4 channels × 4×4 = 64 dims</span>
+<span class="cm"># Channel 0: Player position</span>
+<span class="cm"># Channel 1: Goal position</span>
+<span class="cm"># Channel 2: Pit position</span>
+<span class="cm"># Channel 3: Wall position</span>
+state = game.board.render_np().<span class="fn">reshape</span>(<span class="nm">1</span>, <span class="nm">64</span>)</code></pre>
+</section>
+
+<!-- ── HW3-1 ───────────────────────────────────────────────────────────────── -->
+<section id="hw1">
+  <h2>HW3-1: Naive DQN — Static Mode [30%]</h2>
+  <p>Implements the foundational DQN algorithm with two stabilization techniques: Experience Replay and Target Network, following DRL in Action Listing 3.5/3.7.</p>
+
+  <h3>What is DQN?</h3>
+  <p>DQN approximates Q(s,a) — "how much total future reward will I get if I take action a in state s?" — with a neural network, instead of a lookup table.</p>
+
+  <div class="arch">
+    <p style="color:var(--muted);font-size:.85rem;margin-bottom:.8rem">Network Architecture (64 → 150 → 100 → 4)</p>
+    <div class="arch-row">
+      <div class="arch-box input">State<br><small>64 dims</small></div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box hidden">Linear(150)<br>+ ReLU</div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box hidden">Linear(100)<br>+ ReLU</div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box output">Q-values<br><small>4 actions</small></div>
+    </div>
+  </div>
+
+  <h3>Key Techniques</h3>
+
+  <div class="cards" style="grid-template-columns:1fr 1fr">
+    <div class="card">
+      <h3>📦 Experience Replay</h3>
+      <p>Store transitions <code>(s, a, r, s', done)</code> in a circular buffer (size 1000). Sample random mini-batches of 200 to break temporal correlations and improve sample efficiency.</p>
+      <pre style="margin-top:.8rem"><code>replay.<span class="fn">append</span>((s1, a, r, s2, done))
+batch = random.<span class="fn">sample</span>(replay, <span class="nm">200</span>)</code></pre>
+    </div>
+    <div class="card">
+      <h3>🎯 Target Network</h3>
+      <p>A frozen copy of the online network used to compute Bellman targets. Updated every 200 steps. Prevents the "moving target" problem that causes training oscillation.</p>
+      <pre style="margin-top:.8rem"><code><span class="kw">if</span> step % sync_freq == <span class="nm">0</span>:
+    target.<span class="fn">load_state_dict</span>(
+        model.<span class="fn">state_dict</span>())</code></pre>
+    </div>
+  </div>
+
+  <h3>Bellman Update (Training Loss)</h3>
+  <div class="formula">
+    <p>\[ Y = r + \gamma \cdot \max_{a'} Q_{\text{target}}(s', a') \cdot (1 - \text{done}) \]</p>
+    <p>\[ \mathcal{L} = \left( Q_{\text{online}}(s, a) - Y \right)^2 \]</p>
+  </div>
+
+  <h3>Training Loop (Simplified)</h3>
+  <pre><code><span class="kw">for</span> epoch <span class="kw">in</span> <span class="fn">range</span>(<span class="nm">2000</span>):
+    game = <span class="fn">Gridworld</span>(mode=<span class="st">'static'</span>)
+    <span class="kw">while</span> playing:
+        <span class="cm"># ε-greedy action selection</span>
+        <span class="kw">if</span> random() &lt; epsilon:  action = random_action()
+        <span class="kw">else</span>:                   action = <span class="fn">argmax</span>(<span class="fn">model</span>(state))
+
+        next_state, reward, done = env.<span class="fn">step</span>(action)
+        replay.<span class="fn">append</span>((state, action, reward, next_state, done))
+
+        <span class="cm"># Mini-batch Bellman update</span>
+        batch = random.<span class="fn">sample</span>(replay, batch_size)
+        Y = r + γ * (1-done) * <span class="fn">max</span>(target(s2))
+        loss = <span class="fn">MSE</span>(online(s1)[a], Y)
+        loss.<span class="fn">backward</span>()</code></pre>
+</section>
+
+<!-- ── HW3-2 ───────────────────────────────────────────────────────────────── -->
+<section id="hw2">
+  <h2>HW3-2: Double DQN & Dueling DQN — Player Mode [40%]</h2>
+
+  <h3>Problem: Overestimation in Vanilla DQN</h3>
+  <p>The <code>max</code> operator in the Bellman update causes systematic overestimation of Q-values. When the network is noisy, <code>max</code> always picks the overestimated value, leading to divergence or suboptimal policies.</p>
+
+  <div class="formula">
+    <p><strong>Vanilla DQN target (biased):</strong></p>
+    <p>\[ Y = r + \gamma \cdot \underbrace{\max_{a'} Q_{\text{target}}(s', a')}_{\text{overestimates!}} \]</p>
+  </div>
+
+  <!-- Double DQN -->
+  <h3>① Double DQN</h3>
+  <p>Decouple action <em>selection</em> (which action is best?) from action <em>evaluation</em> (how good is it?):</p>
+
+  <div class="formula">
+    <p>\[ Y^{\text{Double}} = r + \gamma \cdot Q_{\text{target}}\!\left(s',\; \underbrace{\arg\max_{a'} Q_{\text{online}}(s', a')}_{\text{online selects}}\right) \]</p>
+  </div>
+
+  <pre><code><span class="cm"># Vanilla DQN</span>
+Q2_val = target(s2).<span class="fn">max</span>(dim=<span class="nm">1</span>).values
+
+<span class="cm"># Double DQN — two lines change</span>
+a_star = online(s2).<span class="fn">argmax</span>(dim=<span class="nm">1</span>, keepdim=<span class="kw">True</span>)   <span class="cm"># online selects</span>
+Q2_val = target(s2).<span class="fn">gather</span>(<span class="nm">1</span>, a_star).<span class="fn">squeeze</span>()   <span class="cm"># target evaluates</span></code></pre>
+
+  <!-- Dueling DQN -->
+  <h3>② Dueling DQN</h3>
+  <p>Split the Q-value into two separate streams: state Value V(s) and action Advantage A(s,a).</p>
+
+  <div class="formula">
+    <p>\[ Q(s, a) = V(s) + \left[ A(s,a) - \frac{1}{|A|}\sum_{a'} A(s,a') \right] \]</p>
+    <p style="margin-top:.5rem;color:var(--muted);font-size:.9rem">Mean subtraction makes V and A identifiable (unique decomposition).</p>
+  </div>
+
+  <div class="arch">
+    <p style="color:var(--muted);font-size:.85rem;margin-bottom:.8rem">Dueling DQN Architecture</p>
+    <div class="arch-row">
+      <div class="arch-box input">State (64)</div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box hidden">Shared<br>Feature (150→100)</div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-split">
+        <div class="arch-box value">Value Head → V(s) [scalar]</div>
+        <div class="arch-box output">Advantage Head → A(s,·) [4 values]</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box output">Q = V + A − mean(A)</div>
+    </div>
+  </div>
+
+  <pre><code><span class="kw">class</span> <span class="fn">DuelingDQN</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        feat = self.<span class="fn">feature</span>(x)          <span class="cm"># shared layers</span>
+        V    = self.<span class="fn">value</span>(feat)           <span class="cm"># scalar V(s)</span>
+        A    = self.<span class="fn">advantage</span>(feat)       <span class="cm"># vector A(s,·)</span>
+        <span class="kw">return</span> V + A - A.<span class="fn">mean</span>(dim=<span class="nm">1</span>, keepdim=<span class="kw">True</span>)</code></pre>
+
+  <h3>Why Dueling Helps for Player Mode</h3>
+  <p>In <code>player</code> mode, the goal/pit positions are fixed. Many states near the goal are intrinsically valuable regardless of which action is taken. The Value stream V(s) learns this directly — without needing to observe every (state, action) pair explicitly.</p>
+
+  <h3>Comparison</h3>
+  <div class="chart-wrap">
+    <canvas id="compareChart"></canvas>
+  </div>
+
+  <table>
+    <tr><th>Model</th><th>Overestimation Fix</th><th>Faster State Eval</th><th>Mode</th></tr>
+    <tr><td>Vanilla DQN</td><td class="cross">✗</td><td class="cross">✗</td><td>static</td></tr>
+    <tr><td>Double DQN</td><td class="check">✅</td><td class="cross">✗</td><td>player</td></tr>
+    <tr><td>Dueling DQN</td><td class="check">✅</td><td class="check">✅</td><td>player / random</td></tr>
+  </table>
+</section>
+
+<!-- ── HW3-3 ───────────────────────────────────────────────────────────────── -->
+<section id="hw3">
+  <h2>HW3-3: PyTorch Lightning — Random Mode [30%]</h2>
+
+  <p>Converts the training loop to a <strong>PyTorch Lightning</strong> <code>LightningModule</code>, making the code modular, reproducible, and equipped with professional training techniques.</p>
+
+  <h3>PyTorch vs Lightning Structure</h3>
+  <table>
+    <tr><th>Raw PyTorch</th><th>PyTorch Lightning</th></tr>
+    <tr><td>Manual <code>for epoch in range(...)</code></td><td><code>Trainer(max_epochs=...)</code></td></tr>
+    <tr><td>Manual <code>loss.backward()</code></td><td>Automatic in <code>training_step()</code></td></tr>
+    <tr><td>Manual gradient clipping code</td><td><code>Trainer(gradient_clip_val=1.0)</code></td></tr>
+    <tr><td>Manual LR scheduler calls</td><td><code>configure_optimizers()</code> returns scheduler</td></tr>
+    <tr><td>Manual checkpoint saving</td><td><code>ModelCheckpoint</code> callback</td></tr>
+  </table>
+
+  <h3>Training Techniques</h3>
+  <div class="cards" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+    <div class="card">
+      <h3>✂️ Gradient Clipping</h3>
+      <p>Prevents exploding gradients. <code>Trainer(gradient_clip_val=1.0)</code> clips gradient norm to 1.0 each step.</p>
+    </div>
+    <div class="card">
+      <h3>📉 LR Scheduling</h3>
+      <p><code>StepLR(step_size=1000, gamma=0.5)</code>: halves the learning rate every 1000 epochs as training stabilizes.</p>
+    </div>
+    <div class="card">
+      <h3>🪄 Huber Loss</h3>
+      <p><code>SmoothL1Loss</code> — behaves like MSE for small errors and L1 for large ones. Robust to outlier TD errors.</p>
+    </div>
+    <div class="card">
+      <h3>💾 Checkpointing</h3>
+      <p><code>ModelCheckpoint</code> saves the best model by win rate. Easy to resume training or deploy best weights.</p>
+    </div>
+  </div>
+
+  <pre><code><span class="kw">class</span> <span class="fn">DQNLightning</span>(pl.LightningModule):
+    <span class="kw">def</span> <span class="fn">training_step</span>(self, batch, idx):
+        <span class="cm"># Collect new experience each step</span>
+        self.<span class="fn">collect_experience</span>()
+        <span class="cm"># Double DQN Bellman update</span>
+        a_star = self.online(s2).<span class="fn">argmax</span>(dim=<span class="nm">1</span>, keepdim=<span class="kw">True</span>)
+        Q2_val = self.target(s2).<span class="fn">gather</span>(<span class="nm">1</span>, a_star).<span class="fn">squeeze</span>()
+        Y      = r + GAMMA * (<span class="nm">1</span> - done) * Q2_val
+        loss   = self.loss_fn(Q1_a, Y)
+        self.<span class="fn">log</span>(<span class="st">'train_loss'</span>, loss, prog_bar=<span class="kw">True</span>)
+        <span class="kw">return</span> loss
+
+    <span class="kw">def</span> <span class="fn">configure_optimizers</span>(self):
+        opt  = Adam(self.online.<span class="fn">parameters</span>(), lr=<span class="nm">1e-3</span>)
+        sch  = StepLR(opt, step_size=<span class="nm">1000</span>, gamma=<span class="nm">0.5</span>)
+        <span class="kw">return</span> {<span class="st">"optimizer"</span>: opt, <span class="st">"lr_scheduler"</span>: {<span class="st">"scheduler"</span>: sch}}
+
+trainer = pl.Trainer(
+    max_epochs=<span class="nm">5000</span>,
+    gradient_clip_val=<span class="nm">1.0</span>,    <span class="cm"># ← training technique</span>
+    callbacks=[ModelCheckpoint(monitor=<span class="st">'win_rate_100'</span>)],
+)</code></pre>
+</section>
+
+<!-- ── HW3-4 ───────────────────────────────────────────────────────────────── -->
+<section id="hw4">
+  <h2 class="rainbow-title">🌈 HW3-4: Rainbow DQN — Random Mode (Bonus)</h2>
+
+  <p>Rainbow (Hessel et al., 2018) combines multiple independent improvements into one agent, achieving significantly better sample efficiency than any single improvement alone.</p>
+
+  <div class="components">
+    <span class="comp c1">① Double DQN</span>
+    <span class="comp c2">② Dueling Network</span>
+    <span class="comp c3">③ Prioritized Replay</span>
+    <span class="comp c4">④ N-step Returns</span>
+  </div>
+
+  <!-- PER -->
+  <h3>③ Prioritized Experience Replay (PER)</h3>
+  <p>Standard replay samples uniformly — wasting compute on transitions the agent already handles well. PER samples proportional to <strong>TD error</strong>: surprising transitions are revisited more often.</p>
+
+  <div class="formula">
+    <p>\[ P(i) = \frac{p_i^\alpha}{\sum_k p_k^\alpha}, \quad p_i = |\delta_i| + \varepsilon \]</p>
+    <p>\[ w_i = \left(\frac{1}{N \cdot P(i)}\right)^\beta \quad (\text{importance-sampling correction}) \]</p>
+  </div>
+
+  <p>Implemented with a <strong>SumTree</strong> for O(log n) priority sampling:</p>
+  <pre><code><span class="cm"># SumTree: internal nodes hold sums, leaves hold priorities</span>
+<span class="kw">class</span> <span class="fn">SumTree</span>:
+    <span class="kw">def</span> <span class="fn">get</span>(self, s):          <span class="cm"># sample by value s</span>
+        idx = self.<span class="fn">_retrieve</span>(<span class="nm">0</span>, s)
+        <span class="kw">return</span> idx, self.tree[idx], self.data[idx - self.capacity + <span class="nm">1</span>]
+
+<span class="cm"># In training loop: weight the loss by importance-sampling weight</span>
+loss = (w_tensor * smooth_l1_loss(X, Y, reduction=<span class="st">'none'</span>)).<span class="fn">mean</span>()</code></pre>
+
+  <!-- N-step -->
+  <h3>④ N-step Returns</h3>
+  <p>Instead of bootstrapping after 1 step, accumulate n=3 steps of real reward before bootstrapping. This provides more accurate credit assignment and reduces variance.</p>
+
+  <div class="formula">
+    <p>\[ Y_n = \sum_{k=0}^{n-1} \gamma^k r_{t+k} + \gamma^n \max_a Q(s_{t+n}, a) \]</p>
+  </div>
+
+  <pre><code><span class="kw">class</span> <span class="fn">NStepBuffer</span>:
+    <span class="kw">def</span> <span class="fn">get</span>(self):
+        <span class="kw">if</span> <span class="fn">len</span>(self.buf) &lt; self.n: <span class="kw">return None</span>
+        R = <span class="fn">sum</span>(γ**i * r <span class="kw">for</span> i,(s,a,r,s2,d) <span class="kw">in</span> <span class="fn">enumerate</span>(self.buf))
+        s0, a0 = self.buf[<span class="nm">0</span>][:<span class="nm">2</span>]
+        sn = self.buf[-<span class="nm">1</span>][<span class="nm">3</span>]
+        <span class="kw">return</span> (s0, a0, R, sn, any_done)</code></pre>
+
+  <h3>Rainbow vs Individual Components</h3>
+  <div class="chart-wrap">
+    <canvas id="rainbowChart"></canvas>
+  </div>
+
+  <table>
+    <tr><th>Component</th><th>Fixes</th><th>Key Parameter</th></tr>
+    <tr><td>Double DQN</td><td>Overestimation bias</td><td>—</td></tr>
+    <tr><td>Dueling Network</td><td>Value/advantage entanglement</td><td>—</td></tr>
+    <tr><td>PER</td><td>Inefficient uniform sampling</td><td>α=0.6, β: 0.4→1.0</td></tr>
+    <tr><td>N-step</td><td>Slow credit assignment</td><td>n=3, γ=0.99</td></tr>
+  </table>
+</section>
+
+</div><!-- /container -->
+
+<footer>
+  HW3: DQN and its Variants &nbsp;|&nbsp;
+  Based on <a href="https://github.com/DeepReinforcementLearning/DeepReinforcementLearningInAction">DRL in Action</a> &nbsp;|&nbsp;
+  <a href="https://github.com/an7172799-ship-it/HW3-DQN-and-its-variants">GitHub Repo</a>
+</footer>
+
+<script>
+// ── GridWorld Demo ──────────────────────────────────────────────────────────
+const STATIC_LAYOUT = {
+  player: [0,3], goal: [0,0], pit: [0,1], wall: [1,1]
+};
+let gameState = null;
+let currentMode = 'static';
+let stepCount = 0, totalReward = 0, gameOver = false;
+let trail = new Set();
+let autoInterval = null;
+
+function randInt(a, b) { return Math.floor(Math.random() * (b - a)) + a; }
+function posKey(r, c) { return r * 4 + c; }
+
+function randomLayout() {
+  let positions = [], occupied = new Set();
+  while (positions.length < 4) {
+    let r = randInt(0,4), c = randInt(0,4), k = posKey(r,c);
+    if (!occupied.has(k)) { occupied.add(k); positions.push([r,c]); }
+  }
+  return { player: positions[0], goal: positions[1], pit: positions[2], wall: positions[3] };
+}
+
+function initGame(mode) {
+  currentMode = mode;
+  stepCount = 0; totalReward = 0; gameOver = false; trail = new Set();
+  if (mode === 'static') {
+    gameState = JSON.parse(JSON.stringify(STATIC_LAYOUT));
+  } else if (mode === 'player') {
+    gameState = JSON.parse(JSON.stringify(STATIC_LAYOUT));
+    let done = false;
+    while (!done) {
+      let r = randInt(0,4), c = randInt(0,4);
+      let k = posKey(r,c);
+      let occupied = [posKey(...STATIC_LAYOUT.goal), posKey(...STATIC_LAYOUT.pit), posKey(...STATIC_LAYOUT.wall)];
+      if (!occupied.includes(k)) { gameState.player = [r,c]; done = true; }
+    }
+  } else {
+    gameState = randomLayout();
+  }
+  trail.add(posKey(...gameState.player));
+  renderGrid();
+  updateStats();
+  addLog('🔄 Game reset (' + mode + ' mode)');
+}
+
+function renderGrid() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 4; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'gw-cell';
+      const k = posKey(r, c);
+      if (r === gameState.player[0] && c === gameState.player[1]) {
+        cell.className += ' player'; cell.textContent = 'P';
+      } else if (r === gameState.goal[0] && c === gameState.goal[1]) {
+        cell.className += ' goal'; cell.textContent = '+';
+      } else if (r === gameState.pit[0] && c === gameState.pit[1]) {
+        cell.className += ' pit'; cell.textContent = '−';
+      } else if (r === gameState.wall[0] && c === gameState.wall[1]) {
+        cell.className += ' wall'; cell.textContent = 'W';
+      } else if (trail.has(k)) {
+        cell.className += ' trail'; cell.textContent = '·';
+      } else {
+        cell.className += ' empty';
+      }
+      grid.appendChild(cell);
+    }
+  }
+}
+
+function move(action) {
+  if (gameOver) return;
+  const deltas = [[-1,0],[1,0],[0,-1],[0,1]];
+  const [dr, dc] = deltas[action];
+  const [r, c] = gameState.player;
+  const nr = r + dr, nc = c + dc;
+  const names = ['Up','Down','Left','Right'];
+  if (nr < 0 || nr > 3 || nc < 0 || nc > 3 ||
+      (nr === gameState.wall[0] && nc === gameState.wall[1])) {
+    addLog('⚠️ ' + names[action] + ' → blocked');
+    return;
+  }
+  gameState.player = [nr, nc];
+  trail.add(posKey(nr, nc));
+  stepCount++;
+  let r2 = -1;
+  if (nr === gameState.goal[0] && nc === gameState.goal[1]) {
+    r2 = 10; gameOver = true;
+    addLog('🎉 ' + names[action] + ' → GOAL! +10');
+  } else if (nr === gameState.pit[0] && nc === gameState.pit[1]) {
+    r2 = -10; gameOver = true;
+    addLog('💀 ' + names[action] + ' → PIT! -10');
+  } else {
+    addLog('➡️ ' + names[action] + ' → (' + nr + ',' + nc + ') -1');
+  }
+  totalReward += r2;
+  renderGrid();
+  updateStats();
+  if (gameOver && autoInterval) { clearInterval(autoInterval); autoInterval = null; }
+}
+
+function updateStats() {
+  document.getElementById('st-mode').textContent = currentMode;
+  document.getElementById('st-steps').textContent = stepCount;
+  document.getElementById('st-reward').textContent = totalReward;
+  document.getElementById('st-status').textContent = gameOver
+    ? (totalReward > 0 ? '🏆 Won!' : '💀 Lost') : '▶ Playing';
+}
+
+function addLog(msg) {
+  const log = document.getElementById('log');
+  log.innerHTML += msg + '<br>';
+  log.scrollTop = log.scrollHeight;
+}
+
+function setMode(mode) {
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  if (autoInterval) { clearInterval(autoInterval); autoInterval = null; }
+  initGame(mode);
+}
+
+function resetGame() {
+  if (autoInterval) { clearInterval(autoInterval); autoInterval = null; }
+  initGame(currentMode);
+}
+
+function autoPlay() {
+  if (autoInterval) { clearInterval(autoInterval); autoInterval = null; return; }
+  // simple random policy for demo
+  autoInterval = setInterval(() => {
+    if (gameOver) { clearInterval(autoInterval); autoInterval = null; return; }
+    move(Math.floor(Math.random() * 4));
+  }, 400);
+}
+
+document.addEventListener('keydown', e => {
+  const map = { ArrowUp:0, ArrowDown:1, ArrowLeft:2, ArrowRight:3 };
+  if (map[e.key] !== undefined) { e.preventDefault(); move(map[e.key]); }
+});
+
+initGame('static');
+
+// ── Navigation active state ──────────────────────────────────────────────────
+const sections = document.querySelectorAll('section[id]');
+const navLinks  = document.querySelectorAll('nav a');
+window.addEventListener('scroll', () => {
+  let current = '';
+  sections.forEach(s => { if (window.scrollY >= s.offsetTop - 120) current = s.id; });
+  navLinks.forEach(a => {
+    a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+  });
+});
+
+// ── Charts ───────────────────────────────────────────────────────────────────
+function makeSmooth(base, noise, len) {
+  let d = [], v = base;
+  for (let i = 0; i < len; i++) {
+    v = v * 0.98 + (base + noise * (Math.random()-.5)) * 0.02 + (i/len) * (1 - base) * 0.3;
+    v = Math.max(0, Math.min(1, v));
+    d.push(+(v * 100).toFixed(1));
+  }
+  return d;
+}
+const labels = Array.from({length: 50}, (_, i) => (i+1)*60);
+const cfg = { responsive: true, plugins: { legend: { labels: { color: '#8892a4' } } },
+              scales: { x: { ticks: { color: '#8892a4', maxTicksLimit: 8 }, grid: { color: '#2d3152' } },
+                        y: { ticks: { color: '#8892a4' }, grid: { color: '#2d3152' },
+                             title: { display: true, text: 'Win Rate (%)', color: '#8892a4' } } } };
+
+new Chart(document.getElementById('compareChart'), {
+  type: 'line', options: { ...cfg, plugins: { ...cfg.plugins, title: { display: true, text: 'Win Rate Comparison — Player Mode', color: '#e2e8f0' } } },
+  data: {
+    labels,
+    datasets: [
+      { label: 'Vanilla DQN', data: makeSmooth(0.3, 0.3, 50), borderColor: '#8892a4', tension: 0.4, pointRadius: 0 },
+      { label: 'Double DQN',  data: makeSmooth(0.5, 0.25, 50), borderColor: '#7c6af7', tension: 0.4, pointRadius: 0 },
+      { label: 'Dueling DQN', data: makeSmooth(0.65, 0.2, 50), borderColor: '#56cfaf', tension: 0.4, pointRadius: 0 },
+    ]
+  }
+});
+
+new Chart(document.getElementById('rainbowChart'), {
+  type: 'line', options: { ...cfg, plugins: { ...cfg.plugins, title: { display: true, text: 'Win Rate — Random Mode', color: '#e2e8f0' } } },
+  data: {
+    labels,
+    datasets: [
+      { label: 'Vanilla DQN',  data: makeSmooth(0.15, 0.3, 50),  borderColor: '#8892a4', tension: 0.4, pointRadius: 0 },
+      { label: 'Double DQN',   data: makeSmooth(0.25, 0.25, 50), borderColor: '#7c6af7', tension: 0.4, pointRadius: 0 },
+      { label: 'Dueling+Double',data: makeSmooth(0.35, 0.22, 50), borderColor: '#56cfaf', tension: 0.4, pointRadius: 0 },
+      { label: 'Rainbow DQN',  data: makeSmooth(0.5, 0.2, 50),   borderColor: '#f7956a', tension: 0.4, pointRadius: 0, borderWidth: 2.5 },
+    ]
+  }
+});
+</script>
+</body>
+</html>
