@@ -24,19 +24,19 @@ random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
 
 # ── Hyper-parameters ─────────────────────────────────────────────────────────
 MODE       = 'random'
-LR         = 5e-4
-GAMMA      = 0.99
+LR         = 1e-3
+GAMMA      = 0.95          # shorter horizon suits small 4x4 grid
 EPSILON    = 1.0
-EPS_MIN    = 0.02
-EPOCHS     = 8000
+EPS_MIN    = 0.05          # keep some exploration throughout
+EPOCHS     = 5000
 MEM_SIZE   = 10000
 BATCH_SIZE = 256
-MAX_MOVES  = 60
-SYNC_FREQ  = 400
-N_STEP     = 3             # multi-step return horizon
+MAX_MOVES  = 50
+SYNC_FREQ  = 200           # more frequent target sync
+N_STEP     = 2             # reduce n-step variance
 ALPHA      = 0.6           # PER: prioritization exponent
 BETA_START = 0.4           # PER: importance-sampling start
-BETA_END   = 1.0           # PER: importance-sampling end (anneal to 1)
+BETA_END   = 0.9           # PER: don't anneal all the way to 1
 ACTION_SET = {0: 'u', 1: 'd', 2: 'l', 3: 'r'}
 
 
